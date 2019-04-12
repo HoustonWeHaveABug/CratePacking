@@ -17,14 +17,14 @@ int compare_crate_edges(const void *, const void *);
 int compare_box_edges(const void *, const void *);
 void link_node(node_t *, node_t *, node_t *);
 long *mp_create(long);
-void crate_packing(long, long);
+void crate_packing(node_t *, long, long);
 int mp_copy(long *, long **, long, long, long);
 int mp_val_multiply(long *, long **, long, long);
 int mp_compare(long *, long, long *);
 int mp_max_set(long *, long, long, long **);
 
 int p_len;
-long dimensions, *crate, dimension, p_max, *q_max, q_stack_size, *q_stack, *v_max, v_stack_size, *v_stack;
+long dimensions, *crate, dimension, p_max, *q_max, q_stack_size, *q_stack, *v_max, v_stack_size, *v_stack, cost;
 node_t *box, *header;
 
 int main(void) {
@@ -148,7 +148,10 @@ int main(void) {
 		return EXIT_FAILURE;
 	}
 	dimension = 0;
-	crate_packing(0, 0);
+	cost = 0;
+	crate_packing(NULL, 0, 0);
+	printf("Cost %ld\n", cost);
+	fflush(stdout);
 	free(v_stack);
 	free(v_max);
 	free(q_stack);
@@ -219,29 +222,57 @@ long *mp_create(long val) {
 	return mp;
 }
 
-void crate_packing(long q_last, long v_last) {
+void crate_packing(node_t *node_last, long q_last, long v_last) {
 	long q_size = q_stack[q_last], v_size = v_stack[v_last], i;
+	cost++;
 	if (dimension < dimensions) {
 		long q_next = q_last+q_size, v_next = v_last+v_size;
-		node_t *node;
+		node_t *first, *node;
+		if (node_last && crate[dimension] == crate[dimension-1]) {
+			first = node_last;
+			if (first->next[dimension] == header) {
+				return;
+			}
+		}
+		else {
+			first = header;
+		}
 		if (!mp_copy(&v_stack_size, &v_stack, v_last, v_next, v_size)) {
 			return;
 		}
-		for (i = dimension; i < dimensions; i++) {
-			if (crate[i]/header->next[i]->edge == 0) {
-				return;
-			}
-			if (!mp_val_multiply(&v_stack_size, &v_stack, v_next, crate[i]-crate[i]%header->next[i]->edge)) {
-				return;
-			}
-			if (mp_compare(v_stack, v_next, v_max) > 0) {
-				break;
-			}
-		}
-		if (i == dimensions) {
+		if (crate[dimension]/first->next[dimension]->edge == 0) {
 			return;
 		}
-		for (node = header->next[dimension]; node != header && crate[dimension]/node->edge > 0; node = node->next[dimension]) {
+		if (!mp_val_multiply(&v_stack_size, &v_stack, v_next, crate[dimension]-crate[dimension]%first->next[dimension]->edge)) {
+			return;
+		}
+		if (mp_compare(v_stack, v_next, v_max) <= 0) {
+			node = first->next[dimension];
+			for (i = dimension+1; i < dimensions; i++) {
+				if (crate[i] == crate[i-1]) {
+					node = node->next[i];
+					if (node == header) {
+						return;
+					}
+				}
+				else {
+					node = header->next[i];
+				}
+				if (crate[i]/node->edge == 0) {
+					return;
+				}
+				if (!mp_val_multiply(&v_stack_size, &v_stack, v_next, crate[i]-crate[i]%node->edge)) {
+					return;
+				}
+				if (mp_compare(v_stack, v_next, v_max) > 0) {
+					break;
+				}
+			}
+			if (i == dimensions) {
+				return;
+			}
+		}
+		for (node = first->next[dimension]; node != header && crate[dimension]/node->edge > 0; node = node->next[dimension]) {
 			if (node->edge != node->last[dimension]->edge) {
 				mp_copy(&q_stack_size, &q_stack, q_last, q_next, q_size);
 				mp_val_multiply(&q_stack_size, &q_stack, q_next, crate[dimension]/node->edge);
@@ -252,7 +283,7 @@ void crate_packing(long q_last, long v_last) {
 					node->last[i]->next[i] = node->next[i];
 				}
 				dimension++;
-				crate_packing(q_next, v_next);
+				crate_packing(node, q_next, v_next);
 				dimension--;
 				for (i = dimension; i < dimensions; i++) {
 					node->last[i]->next[i] = node;
