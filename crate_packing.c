@@ -35,14 +35,15 @@ static void mp_print(const mp_t *);
 static void mp_free(mp_t *);
 static void crate_packing(unsigned);
 
-static unsigned dimensions_n, *crate, cells_n, short_bits, short_max, long_size, cost;
+static int new_tried, found;
+static unsigned dimensions_n, *crate, cells_n, short_bits, short_max, long_size, cost, tried_max;
 static box_edge_t *box_edges;
 static cell_t *cells, **tried_cells;
 static mp_t mp_product_max, mp_product;
 
 int main(void) {
 	unsigned i;
-	if (scanf("%u", &dimensions_n) != 1 || dimensions_n < 2U) {
+	if (scanf("%u", &dimensions_n) != 1 || dimensions_n < 1U) {
 		fputs("Invalid number of dimensions\n", stderr);
 		fflush(stderr);
 		return EXIT_FAILURE;
@@ -118,7 +119,16 @@ int main(void) {
 		free(crate);
 	}
 	cost = 0U;
-	crate_packing(0U);
+	new_tried = 0;
+	for (tried_max = 1U; tried_max <= dimensions_n; ++tried_max) {
+		printf("Tried %u\n", tried_max);
+		fflush(stdout);
+		found = 0;
+		crate_packing(0U);
+		if (!found) {
+			break;
+		}
+	}
 	printf("Cost %u\n", cost);
 	fflush(stdout);
 	mp_free(&mp_product);
@@ -278,6 +288,7 @@ static void crate_packing(unsigned dimension) {
 	mp_t mp_tmp;
 	++cost;
 	if (dimension < dimensions_n) {
+		unsigned tried;
 		if (!mp_create(&mp_tmp, 0U)) {
 			return;
 		}
@@ -287,8 +298,12 @@ static void crate_packing(unsigned dimension) {
 		}
 		for (i = dimension; i < dimensions_n; ++i) {
 			unsigned j;
-			for (j = i*dimensions_n; j < i*dimensions_n+dimensions_n && cells[j].box_edge->used; ++j);
-			if (!mp_multiply(&mp_tmp, cells[j].product)) {
+			for (j = i*dimensions_n; j < i*dimensions_n+dimensions_n; ++j) {
+				if (!cells[j].box_edge->used && (i == 0 || i > dimension || crate[i] != crate[i-1U] || cells[j].count != tried_cells[i-1U]->count || cells[j].box_edge > tried_cells[i-1U]->box_edge)) {
+					break;
+				}
+			}
+			if (j == i*dimensions_n+dimensions_n || !mp_multiply(&mp_tmp, cells[j].product)) {
 				mp_free(&mp_tmp);
 				return;
 			}
@@ -301,18 +316,29 @@ static void crate_packing(unsigned dimension) {
 			return;
 		}
 		mp_copy(&mp_product, &mp_tmp);
+		tried = 0U;
 		for (i = dimension*dimensions_n; i < dimension*dimensions_n+dimensions_n; ++i) {
-			if (!cells[i].box_edge->used && (dimension == 0U || crate[dimension] != crate[dimension-1U] || cells[i].count != tried_cells[dimension-1U]->count || cells[i].box_edge > tried_cells[dimension-1U]->box_edge) && (i == dimension*dimensions_n || cells[i-1U].box_edge->used || cells[i].count != cells[i-1U].count)) {
-				cells[i].box_edge->used = 1;
-				if (!mp_multiply(&mp_product, cells[i].product)) {
-					mp_copy(&mp_tmp, &mp_product);
-					mp_free(&mp_tmp);
-					return;
+			if (!cells[i].box_edge->used) {
+				++tried;
+				if (tried == tried_max) {
+					++new_tried;
 				}
-				tried_cells[dimension] = cells+i;
-				crate_packing(dimension+1U);
-				mp_copy(&mp_tmp, &mp_product);
-				cells[i].box_edge->used = 0;
+				if ((new_tried || dimensions_n-dimension > tried_max) && (dimension == 0U || crate[dimension] != crate[dimension-1U] || cells[i].count != tried_cells[dimension-1U]->count || cells[i].box_edge > tried_cells[dimension-1U]->box_edge) && (i == dimension*dimensions_n || cells[i-1U].box_edge->used || cells[i].count != cells[i-1U].count)) {
+					cells[i].box_edge->used = 1;
+					if (!mp_multiply(&mp_product, cells[i].product)) {
+						mp_copy(&mp_tmp, &mp_product);
+						mp_free(&mp_tmp);
+						return;
+					}
+					tried_cells[dimension] = cells+i;
+					crate_packing(dimension+1U);
+					mp_copy(&mp_tmp, &mp_product);
+					cells[i].box_edge->used = 0;
+				}
+				if (tried == tried_max) {
+					--new_tried;
+					break;
+				}
 			}
 		}
 	}
@@ -327,6 +353,7 @@ static void crate_packing(unsigned dimension) {
 		}
 		mp_print(&mp_tmp);
 		fflush(stdout);
+		++found;
 	}
 	mp_free(&mp_tmp);
 }
